@@ -2,7 +2,7 @@
 
 Self-hosted daily news digest for an e-reader.
 
-The service pulls articles from a pluggable source (The Guardian in v1), builds one EPUB per day, and serves it over OPDS so an e-reader can pull it when you put the device into File Transfer/OPDS mode.
+The service pulls articles from pluggable sources (The Guardian in v1), builds one EPUB per source, and serves them over a single OPDS catalog so an e-reader can pull them when you put the device into File Transfer/OPDS mode.
 
 **Do not port-forward this. Do not expose it to the internet.** There is no authentication in v1.
 
@@ -62,12 +62,12 @@ TESTING=1 DATA_DIR=/tmp/eink-news-test pytest
 
 ## How delivery works
 
-The e-reader sleeps and only runs its web server in File Transfer/OPDS mode, so this service never pushes. It always has the latest digest ready at a stable URL:
+The e-reader sleeps and only runs its web server in File Transfer/OPDS mode, so this service never pushes. It always has the latest digest for each source ready at a stable catalog URL:
 
 - Catalog: `GET /opds`
-- File: `GET /download/digest-YYYY-MM-DD.epub`
+- File: `GET /download/digest-YYYY-MM-DD-{source}.epub`
 
-Re-running a sync on the same day overwrites that day’s file, so the OPDS entry stays stable.
+A sync run builds one EPUB per included source. Re-running a source on the same day overwrites that source’s file for the day, so its OPDS entry stays stable. Digests from other sources are left alone.
 
 ## Configuration
 

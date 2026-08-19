@@ -49,15 +49,15 @@ export default function Dashboard() {
       <div>
         <h1 className="font-serif text-4xl">Today’s paper, when you want it</h1>
         <p className="mt-2 max-w-2xl text-ink/70">
-          This service keeps the latest digest ready. Your reader pulls it over OPDS — nothing is pushed to a sleeping
-          device.
+          This service keeps one digest per source ready. Your reader pulls them over a single OPDS catalog — nothing is
+          pushed to a sleeping device.
         </p>
       </div>
 
       {error && <Banner tone="error">{error}</Banner>}
       {status && !status.source_configured && (
         <Banner tone="warn">
-          The active source is not fully configured.{" "}
+          One or more included sources are not fully configured.{" "}
           <Link to="/sources" className="underline">
             Add an API key
           </Link>{" "}
@@ -66,8 +66,12 @@ export default function Dashboard() {
       )}
 
       <div className="grid gap-4 md:grid-cols-3">
-        <Card title="Active source">
-          <p className="font-serif text-2xl">{status?.active_source_name ?? "—"}</p>
+        <Card title={status?.active_sources && status.active_sources.length > 1 ? "Active sources" : "Active source"}>
+          <p className="font-serif text-2xl">
+            {status?.active_sources?.length
+              ? status.active_sources.map((source) => source.display_name).join(", ")
+              : "—"}
+          </p>
           <p className="mt-1 text-sm text-ink/60">{status?.source_configured ? "Configured" : "Needs setup"}</p>
         </Card>
         <Card title="Last run">
@@ -102,11 +106,16 @@ export default function Dashboard() {
         >
           {busy || status?.run_in_progress ? "Syncing…" : "Sync now"}
         </button>
-        {status?.latest_digest && (
-          <a className="rounded-full border border-ink px-5 py-2 text-sm" href={`/download/${status.latest_digest}`}>
-            Latest digest
-          </a>
-        )}
+        {(status?.latest_digests?.length ?? 0) > 0 &&
+          status!.latest_digests.map((digest) => (
+            <a
+              key={digest.filename}
+              className="rounded-full border border-ink px-5 py-2 text-sm"
+              href={`/download/${digest.filename}`}
+            >
+              {digest.title}
+            </a>
+          ))}
         <Link to="/runs" className="text-sm underline">
           Run history
         </Link>

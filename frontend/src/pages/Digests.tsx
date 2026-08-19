@@ -31,7 +31,8 @@ export default function Digests() {
         <table className="w-full min-w-[640px] text-left text-sm">
           <thead className="border-b border-rule text-xs uppercase tracking-[0.14em] text-ink/50">
             <tr>
-              <th className="px-4 py-3">File</th>
+              <th className="px-4 py-3">Digest</th>
+              <th className="px-4 py-3">Source</th>
               <th className="px-4 py-3">Modified</th>
               <th className="px-4 py-3">Size</th>
               <th className="px-4 py-3"></th>
@@ -40,14 +41,18 @@ export default function Digests() {
           <tbody>
             {digests.length === 0 && (
               <tr>
-                <td className="px-4 py-8 text-ink/60" colSpan={4}>
+                <td className="px-4 py-8 text-ink/60" colSpan={5}>
                   No EPUB files yet. Run a sync after configuring a source.
                 </td>
               </tr>
             )}
             {digests.map((digest) => (
               <tr key={digest.filename} className="border-b border-rule/70 last:border-0">
-                <td className="px-4 py-3 font-mono text-xs">{digest.filename}</td>
+                <td className="px-4 py-3">
+                  <div className="font-medium">{digest.title}</div>
+                  <div className="font-mono text-xs text-ink/50">{digest.filename}</div>
+                </td>
+                <td className="px-4 py-3">{digest.source_id ?? "—"}</td>
                 <td className="px-4 py-3">{formatWhen(digest.modified_at)}</td>
                 <td className="px-4 py-3">{formatBytes(digest.size_bytes)}</td>
                 <td className="px-4 py-3">

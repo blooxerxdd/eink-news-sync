@@ -36,6 +36,7 @@ export interface StatusPayload {
   warning: string;
   active_source_id: string | null;
   active_source_name: string | null;
+  active_sources: { source_id: string; display_name: string; configured: boolean }[];
   source_configured: boolean;
   run_in_progress: boolean;
   last_run: RunSummary | null;
@@ -45,6 +46,7 @@ export interface StatusPayload {
   lan_ips: string[];
   site_url: string;
   latest_digest: string | null;
+  latest_digests: { source_id: string; filename: string; title: string }[];
 }
 
 export interface ConfigField {
@@ -84,6 +86,8 @@ export interface SettingsPayload {
 
 export interface DigestInfo {
   filename: string;
+  title: string;
+  source_id: string | null;
   size_bytes: number;
   modified_at: string;
   download_url: string;

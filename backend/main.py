@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -21,7 +20,8 @@ from access_log import is_device_path, list_devices, list_events, record_access
 from config import DIGESTS_DIR, PORT, TESTING
 from database import get_session, get_settings_map, init_db
 from models import ArticleRecord, Run, SourceConfig, utcnow
-from opds import build_opds_feed, list_digest_files
+from digest_builder import DIGEST_FILENAME, parse_digest_filename
+from opds import build_opds_feed, digest_entry_title, list_digest_files
 from scheduler import (
     RunInProgress,
     is_run_in_progress,
@@ -34,7 +34,7 @@ from scheduler import (
 from sources import SOURCES, get_source
 from util import (
     activate_source,
-    get_active_source_row,
+    get_active_source_rows,
     lan_ipv4_addresses,
     load_json,
     mask_config,
@@ -47,7 +47,7 @@ from util import (
 logging.basicConfig(level=logging.INFO)
 
 FRONTEND_DIST = Path(__file__).resolve().parent.parent / "frontend" / "dist"
-SAFE_DIGEST = re.compile(r"^digest-\d{4}-\d{2}-\d{2}\.epub$")
+SAFE_DIGEST = DIGEST_FILENAME
 
 LAN_WARNING = "Do not port-forward or expose this service to the internet."
 
@@ -120,23 +120,41 @@ def _lan_base_url(request: Request) -> str | None:
 
 @app.get("/api/status")
 def api_status(request: Request, session: Session = Depends(get_session)) -> dict[str, Any]:
-    active = get_active_source_row(session)
+    active_rows = get_active_source_rows(session)
     last = session.exec(select(Run).order_by(desc(Run.started_at))).first()
-    source = SOURCES.get(active.source_id) if active else None
-    config = load_json(active.config_json) if active else {}
-    configured = False
-    if source and active:
+    active_sources: list[dict[str, Any]] = []
+    all_configured = True
+    for row in active_rows:
+        source = SOURCES.get(row.source_id)
+        if source is None:
+            continue
+        config = load_json(row.config_json)
         configured = not source.validate_config(config)
+        if not configured:
+            all_configured = False
+        active_sources.append(
+            {
+                "source_id": source.source_id,
+                "display_name": source.display_name,
+                "configured": configured,
+            }
+        )
+    if not active_sources:
+        all_configured = False
+    primary = active_sources[0] if active_sources else None
+    latest_digests = _latest_digests_by_source()
     lan_ip = primary_lan_ipv4()
     lan_base = _lan_base_url(request)
     request_base = _base_url(request)
     site_url = lan_base or request_base
+    newest = latest_digests[0]["filename"] if latest_digests else None
     return {
         "ok": True,
         "warning": LAN_WARNING,
-        "active_source_id": active.source_id if active else None,
-        "active_source_name": source.display_name if source else None,
-        "source_configured": configured,
+        "active_source_id": primary["source_id"] if primary else None,
+        "active_source_name": primary["display_name"] if primary else None,
+        "active_sources": active_sources,
+        "source_configured": all_configured,
         "run_in_progress": is_run_in_progress(),
         "last_run": serialize_run(last) if last else None,
         "next_run_at": next_run_iso(),
@@ -144,7 +162,8 @@ def api_status(request: Request, session: Session = Depends(get_session)) -> dic
         "lan_ips": lan_ipv4_addresses(),
         "site_url": site_url,
         "opds_url": f"{site_url}/opds",
-        "latest_digest": last.digest_filename if last and last.digest_filename else None,
+        "latest_digest": newest,
+        "latest_digests": latest_digests,
     }
 
 
@@ -263,8 +282,16 @@ def api_put_source_config(
 def api_activate_source(source_id: str, session: Session = Depends(get_session)) -> dict[str, Any]:
     if source_id not in SOURCES:
         raise HTTPException(status_code=404, detail="Unknown source")
-    row = activate_source(session, source_id)
+    row = activate_source(session, source_id, active=True)
     return {"source_id": row.source_id, "is_active": True}
+
+
+@app.post("/api/sources/{source_id}/deactivate")
+def api_deactivate_source(source_id: str, session: Session = Depends(get_session)) -> dict[str, Any]:
+    if source_id not in SOURCES:
+        raise HTTPException(status_code=404, detail="Unknown source")
+    row = activate_source(session, source_id, active=False)
+    return {"source_id": row.source_id, "is_active": False}
 
 
 @app.post("/api/sources/{source_id}/validate")
@@ -328,6 +355,8 @@ def api_list_digests(request: Request) -> list[dict[str, Any]]:
     return [
         {
             "filename": path.name,
+            "title": digest_entry_title(path.name),
+            "source_id": (parse_digest_filename(path.name) or ("", ""))[1] or None,
             "size_bytes": path.stat().st_size,
             "modified_at": datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc).isoformat(),
             "download_url": f"{_base_url(request)}/api/digests/{path.name}/download",
@@ -361,6 +390,26 @@ def _serve_digest(filename: str) -> FileResponse:
     if not path.is_file():
         raise HTTPException(status_code=404, detail="Digest not found")
     return FileResponse(path, media_type="application/epub+zip", filename=filename)
+
+
+def _latest_digests_by_source() -> list[dict[str, str]]:
+    seen: set[str] = set()
+    latest: list[dict[str, str]] = []
+    for path in list_digest_files():
+        parsed = parse_digest_filename(path.name)
+        source_id = parsed[1] if parsed else ""
+        key = source_id or path.name
+        if key in seen:
+            continue
+        seen.add(key)
+        latest.append(
+            {
+                "source_id": source_id,
+                "filename": path.name,
+                "title": digest_entry_title(path.name),
+            }
+        )
+    return latest
 
 
 if FRONTEND_DIST.is_dir():

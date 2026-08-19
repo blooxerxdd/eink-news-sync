@@ -52,14 +52,14 @@ export default function Settings() {
           />
         </div>
         <NumberField
-          label="Max articles per digest"
+          label="Max articles per source digest"
           value={settings.max_articles}
           min={1}
           max={200}
           onChange={(max_articles) => setSettings({ ...settings, max_articles })}
         />
         <NumberField
-          label="Digest retention"
+          label="Digest retention (per source)"
           value={settings.digest_retention}
           min={1}
           max={365}

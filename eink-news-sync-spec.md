@@ -4,7 +4,7 @@
 
 A self-hosted service, running in Docker on a home network, that:
 - Pulls current news articles from a pluggable **source** (Guardian Open Platform to start; FT and others later).
-- Builds a daily digest EPUB.
+- Builds a daily digest EPUB per included source.
 - Serves it via an OPDS catalog for an e-reader to pull.
 - Exposes a local web UI for configuration, run history, and browsing what was fetched.
 
@@ -102,7 +102,7 @@ class NewsSource(ABC):
         show "this source isn't configured correctly" before a run fails silently."""
 ```
 
-Each source is registered in a small registry (`SOURCES = {"guardian": GuardianSource(), "ft": FTSource(), ...}`) keyed by `source_id`. The digest builder and scheduler never import a specific source directly — they look it up by whatever `source_id` is active in config.
+Each source is registered in a small registry (`SOURCES = {"guardian": GuardianSource(), "ft": FTSource(), ...}`) keyed by `source_id`. The digest builder and scheduler never import a specific source directly — they look it up by `source_id`. A sync run may include more than one source; each produces its own EPUB.
 
 **v1 ships exactly one implementation: `GuardianSource`.** Build the interface now, but don't build a second source yet — that's explicitly deferred.
 
@@ -120,7 +120,7 @@ Keep it boring — a single SQLite file, no external DB dependency, for a single
 sources_config
   id (pk)
   source_id            text            -- "guardian"
-  is_active            bool            -- only one active at a time in v1
+  is_active            bool            -- included in the daily sync (multiple may be active)
   config_json          text            -- {"api_key": "...", "sections": [...], ...}
   updated_at           datetime
 
@@ -133,7 +133,7 @@ runs
   articles_fetched     int
   articles_failed      int
   error_message        text null
-  digest_filename      text null       -- e.g. "digest-2026-08-18.epub"
+  digest_filename      text null       -- e.g. "digest-2026-08-18-guardian.epub"
 
 articles
   id (pk)
@@ -158,40 +158,42 @@ Rationale: `runs` + `articles` gives the UI a real history view ("last 30 syncs,
 
 ## 6. Digest builder
 
-- Input: list of `Article` objects from the current run.
-- Output: single EPUB (`ebooklib`), one chapter per article, title page includes date + source name + article count.
-- Naming: `digest-YYYY-MM-DD.epub`, stored under `/data/digests/`.
-- Keep only the last N digests on disk (configurable, default 14) — delete older files on each successful run to avoid unbounded growth on the eReader's SD-mirrored downloads folder.
+- Input: list of `Article` objects from one source in the current run.
+- Output: one EPUB per source (`ebooklib`), one chapter per article, title page includes date + source name + article count.
+- Naming: `digest-YYYY-MM-DD-{source_id}.epub`, stored under `/data/digests/`. Same-day re-runs overwrite that source’s file only.
+- Keep only the last N digests **per source** on disk (configurable, default 14) — delete older files on each successful run to avoid unbounded growth on the eReader's SD-mirrored downloads folder.
 - Digest builder is source-agnostic — it only depends on the `Article` dataclass, not on any specific `NewsSource`.
+- All source digests appear as separate entries in the same OPDS catalog (`GET /opds`).
 
 ## 7. Delivery: OPDS + downloads
 
-- `GET /opds` — Atom/OPDS catalog. Root feed lists available digests (most recent first, e.g. last 7), each with an acquisition link.
+- `GET /opds` — Atom/OPDS catalog. Root feed lists available digests (most recent first, last N per source), each with an acquisition link.
 - `GET /download/{filename}` — serves the EPUB file.
 - No auth (do not expose this to the internet). Document this assumption prominently in the README/UI ("do not port-forward this").
 
 ## 8. Scheduler
 
 - APScheduler cron trigger, configurable hour/minute via settings (persisted in `app_settings`, editable from the UI — not just env vars, since one of the goals is UI-driven config).
-- One run = one source (whatever's marked `is_active`). Multi-source blending is explicitly out of scope for v1 (see §11).
+- One scheduled/manual sync iterates every source marked `is_active` and builds one digest per source. Multiple sources may be active at once.
 - Manual trigger endpoint (`POST /api/runs/trigger`) for testing/on-demand rebuilds, used by both curl and the UI's "Sync now" button.
-- Only one run at a time; a trigger while a run is in progress returns 409, not a queued duplicate.
+- Only one sync at a time (all included sources run sequentially under one lock); a trigger while a run is in progress returns 409, not a queued duplicate.
 
 ## 9. REST API (backend, consumed by the frontend)
 
 All under `/api`. JSON in/out.
 
 ```
-GET  /api/status                  -- overall health: last run summary, next scheduled run, active source
+GET  /api/status                  -- overall health: last run summary, next scheduled run, included sources
 GET  /api/runs?limit=50           -- run history, most recent first
 GET  /api/runs/{id}               -- run detail incl. article list
 GET  /api/runs/{id}/articles      -- articles for a run (title, url, section, fetch_status, word_count)
-POST /api/runs/trigger            -- manual sync now
+POST /api/runs/trigger            -- manual sync now (all included sources)
 
-GET  /api/sources                 -- list of registered source_ids + display names + which is active
+GET  /api/sources                 -- list of registered source_ids + display names + which are included
 GET  /api/sources/{id}/config     -- current config for a source (secrets masked)
 PUT  /api/sources/{id}/config     -- update config for a source
-POST /api/sources/{id}/activate   -- set as the active source
+POST /api/sources/{id}/activate   -- include source in the daily sync (does not exclude others)
+POST /api/sources/{id}/deactivate -- exclude source from the daily sync
 POST /api/sources/{id}/validate   -- run validate_config() and return problems, without doing a real fetch
 
 GET  /api/settings                -- sync_hour, sync_minute, max_articles, opds_title, retention count
@@ -212,17 +214,17 @@ Single-page app, served locally (same origin as the API is simplest — avoid CO
 
 **Pages/views:**
 
-1. **Dashboard** — active source, last run status (success/error, timestamp, article count), next scheduled run, "Sync now" button, link to latest digest.
+1. **Dashboard** — included sources, last run status (success/error, timestamp, article count), next scheduled run, "Sync now" button, links to the latest digest per source.
 2. **Run history** — table of past runs (date, source, status, articles fetched/failed, duration). Click through to a run detail view listing every article attempted with its fetch status (fetched / skipped / failed) — this is the primary debugging surface when a source's parsing breaks.
-3. **Source configuration** — form for the active source's config fields (API key, sections, lookback window, etc.), driven generically by `validate_config()` rather than hardcoded per source where possible, so adding a second source later doesn't require frontend changes beyond a new source appearing in a dropdown. "Test configuration" button calls `POST /api/sources/{id}/validate`.
-4. **Settings** — sync schedule, max articles per digest, digest retention count, OPDS catalog title.
+3. **Source configuration** — form for each source's config fields (API key, sections, lookback window, etc.), driven generically by `validate_config()` rather than hardcoded per source where possible, so adding a second source later doesn't require frontend changes beyond a new source appearing in a dropdown. Include/exclude toggles which sources participate in the daily sync. "Test configuration" button calls `POST /api/sources/{id}/validate`.
+4. **Settings** — sync schedule, max articles per source digest, digest retention count per source, OPDS catalog title.
 5. **Digests** — list of built EPUBs with download links and the OPDS URL to paste into the device.
 
 Keep this simple: server-rendered templates or a small React/vanilla JS app are both fine — no strong opinion, but avoid a heavy build pipeline for a single-user local tool. A reasonable default: FastAPI (or Flask) backend serving both the JSON API and a small static frontend bundle from the same container.
 
 ## 11. Explicitly out of scope for v1
 
-- Multiple sources active simultaneously / merged digests. (Interface supports it later; scheduler and digest builder do not need to handle it now.)
+- Merged digests that blend articles from multiple sources into one EPUB. (Each source gets its own file; they share one OPDS catalog.)
 - Authentication/authorization on the web UI or OPDS endpoints.
 - Push delivery to the device (not possible given device sleep behavior — see §2).
 - Per-article read/unread sync back from the device.
@@ -264,4 +266,4 @@ eink-news-sync/
 
 - Whether digests should include Guardian's `trailText` as an article summary/subtitle in the EPUB.
 - Exact Guardian sections to default to on first boot (spec leaves this empty/user-configured rather than hardcoded).
-- Whether each article should ship as a separate EPUB (separate library/OPDS entries) instead of one chapter-per-article digest file — current spec (§6) assumes one combined daily EPUB; confirm before building if the per-article-file layout is preferred instead.
+- Whether each article should ship as a separate EPUB (separate library/OPDS entries) instead of one chapter-per-article digest file — current spec (§6) assumes one combined EPUB **per source**; confirm before building if the per-article-file layout is preferred instead.

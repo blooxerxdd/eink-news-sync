@@ -110,6 +110,28 @@ def test_download_rejects_invalid_filename(client):
     assert response.status_code == 400
 
 
+def test_download_accepts_source_digest_filename(client, data_dir):
+    path = data_dir / "digests" / "digest-2026-08-18-guardian.epub"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"fake-epub")
+    response = client.get("/download/digest-2026-08-18-guardian.epub")
+    assert response.status_code == 200
+
+
+def test_opds_lists_one_entry_per_source(client, data_dir):
+    digest_dir = data_dir / "digests"
+    digest_dir.mkdir(parents=True, exist_ok=True)
+    (digest_dir / "digest-2026-08-18-guardian.epub").write_bytes(b"g")
+    (digest_dir / "digest-2026-08-18-ft.epub").write_bytes(b"f")
+    response = client.get("/opds")
+    assert response.status_code == 200
+    body = response.content
+    assert "The Guardian — 2026-08-18".encode() in body
+    assert "ft — 2026-08-18".encode() in body
+    assert b"/download/digest-2026-08-18-guardian.epub" in body
+    assert b"/download/digest-2026-08-18-ft.epub" in body
+
+
 def test_mask_helpers():
     assert mask_secret("abcd1234") == "••••1234"
     assert looks_masked("••••1234")

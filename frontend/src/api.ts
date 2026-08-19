@@ -47,6 +47,8 @@ export const api = {
     }),
   activateSource: (id: string) =>
     request<{ source_id: string; is_active: boolean }>(`/api/sources/${id}/activate`, { method: "POST" }),
+  deactivateSource: (id: string) =>
+    request<{ source_id: string; is_active: boolean }>(`/api/sources/${id}/deactivate`, { method: "POST" }),
   validateSource: (id: string, config?: Record<string, unknown>) =>
     request<{ ok: boolean; problems: string[] }>(`/api/sources/${id}/validate`, {
       method: "POST",

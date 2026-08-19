@@ -74,10 +74,24 @@ export default function Sources() {
     setBusy(true);
     try {
       await api.activateSource(current.source_id);
-      setMessage(`${current.display_name} is now the active source.`);
+      setMessage(`${current.display_name} will be included in the next sync.`);
       await load(current.source_id);
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : "Activate failed");
+      setMessage(err instanceof Error ? err.message : "Could not include source");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onDeactivate() {
+    if (!current) return;
+    setBusy(true);
+    try {
+      await api.deactivateSource(current.source_id);
+      setMessage(`${current.display_name} will be skipped on the next sync.`);
+      await load(current.source_id);
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "Could not exclude source");
     } finally {
       setBusy(false);
     }
@@ -89,8 +103,8 @@ export default function Sources() {
     <div className="max-w-2xl space-y-6">
       <h1 className="font-serif text-4xl">Source configuration</h1>
       <p className="text-ink/70">
-        v1 ships The Guardian. Fields below come from the source’s own schema, so a future FT adapter can appear here
-        without a frontend rewrite.
+        Include each source you want in the daily sync. A run builds one EPUB per included source; they all appear in
+        the same OPDS catalog.
       </p>
       <label className="block text-sm">
         <span className="text-xs uppercase tracking-[0.14em] text-ink/50">Source</span>
@@ -102,7 +116,7 @@ export default function Sources() {
           {sources.map((source) => (
             <option key={source.source_id} value={source.source_id}>
               {source.display_name}
-              {source.is_active ? " (active)" : ""}
+              {source.is_active ? " (in sync)" : ""}
             </option>
           ))}
         </select>
@@ -130,14 +144,23 @@ export default function Sources() {
           >
             Test configuration
           </button>
-          {!current.is_active && (
+          {!current.is_active ? (
             <button
               type="button"
               disabled={busy}
               onClick={() => void onActivate()}
               className="rounded-full border border-ink px-4 py-2 text-sm disabled:opacity-50"
             >
-              Activate
+              Include in sync
+            </button>
+          ) : (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void onDeactivate()}
+              className="rounded-full border border-ink px-4 py-2 text-sm disabled:opacity-50"
+            >
+              Exclude from sync
             </button>
           )}
         </div>
