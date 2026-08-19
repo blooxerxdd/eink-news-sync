@@ -52,14 +52,13 @@ def _json_response(payload: dict) -> MagicMock:
 def test_validate_config_accepts_defaults():
     source = ArjayBlogSource()
     assert source.validate_config({}) == []
-    assert source.validate_config({"base_url": BASE, "chapter_order": "newest"}) == []
+    assert source.validate_config({"chapter_order": "newest"}) == []
 
 
 def test_validate_config_rejects_bad_values():
     source = ArjayBlogSource()
-    problems = source.validate_config({"base_url": "not-a-url", "chapter_order": "sideways"})
-    assert any("http(s)" in p for p in problems)
-    assert any("Chapter order" in p for p in problems)
+    problems = source.validate_config({"chapter_order": "sideways"})
+    assert any("Reading order" in p for p in problems)
 
 
 def test_item_to_stub_uses_listing_date_and_url():

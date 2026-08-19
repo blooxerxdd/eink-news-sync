@@ -227,6 +227,7 @@ def api_list_sources(session: Session = Depends(get_session)) -> list[dict[str, 
                 "display_name": source.display_name,
                 "is_active": bool(row and row.is_active),
                 "configured": not source.validate_config(config),
+                "description": source.description,
                 "config_fields": [field.__dict__ for field in source.config_fields()],
             }
         )

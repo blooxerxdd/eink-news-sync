@@ -27,10 +27,11 @@ def test_sources_list_includes_schema(client):
     assert arjay["display_name"] == "The Dev Download"
     assert arjay["configured"] is True
     arjay_keys = {field["key"] for field in arjay["config_fields"]}
-    assert arjay_keys == {"base_url", "chapter_order"}
+    assert arjay_keys == {"chapter_order"}
     order_field = next(f for f in arjay["config_fields"] if f["key"] == "chapter_order")
     assert order_field["type"] == "select"
     assert {opt["value"] for opt in order_field["options"]} == {"oldest", "newest"}
+    assert arjay["description"]
 
 
 def test_config_roundtrip_masks_secret(client):

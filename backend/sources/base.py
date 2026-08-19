@@ -53,6 +53,7 @@ class NewsSource(ABC):
     digest_mode: str = "daily"  # "daily" | "archive"
     output_filename: str | None = None
     ignores_max_items: bool = False
+    description: str | None = None
 
     @abstractmethod
     async def get_headlines(

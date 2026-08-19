@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 from typing import Any
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urljoin
 
 import httpx
 import trafilatura
@@ -20,39 +20,39 @@ class ArjayBlogSource(NewsSource):
     digest_mode = "archive"
     output_filename = "arjay-blog-archive.epub"
     ignores_max_items = True
+    description = (
+        "Archives every public post from blog.arjaythedev.com into one EPUB "
+        "(arjay-blog-archive.epub). The site URL is built in — you only choose "
+        "reading order, then include the source in sync."
+    )
 
     def config_fields(self) -> list[ConfigField]:
         return [
             ConfigField(
-                key="base_url",
-                label="Base URL",
-                type="text",
-                required=False,
-                default=DEFAULT_BASE_URL,
-                help="Publication homepage. Discovery uses this host's /posts JSON listing.",
-            ),
-            ConfigField(
                 key="chapter_order",
-                label="Chapter order",
+                label="Reading order",
                 type="select",
                 required=False,
                 default="oldest",
                 options=[
-                    {"value": "oldest", "label": "Oldest first"},
-                    {"value": "newest", "label": "Newest first"},
+                    {
+                        "value": "oldest",
+                        "label": "Oldest first — earliest post at the start of the book",
+                    },
+                    {
+                        "value": "newest",
+                        "label": "Newest first — latest post at the start of the book",
+                    },
                 ],
-                help="Order of posts inside the single archive EPUB.",
+                help="Oldest first is usually better for a blog archive: you read in the order the posts were written.",
             ),
         ]
 
     def validate_config(self, config: dict[str, Any]) -> list[str]:
         problems: list[str] = []
-        parsed = urlparse(_base_url(config))
-        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-            problems.append("Base URL must be an http(s) URL.")
         order = str(config.get("chapter_order") or "oldest").strip()
         if order not in {"oldest", "newest"}:
-            problems.append("Chapter order must be oldest or newest.")
+            problems.append("Reading order must be oldest or newest.")
         return problems
 
     async def get_headlines(
@@ -169,9 +169,8 @@ def item_to_stub(item: dict[str, Any], base_url: str) -> ArticleStub:
     )
 
 
-def _base_url(config: dict[str, Any]) -> str:
-    raw = str(config.get("base_url") or DEFAULT_BASE_URL).strip()
-    return raw.rstrip("/") or DEFAULT_BASE_URL
+def _base_url(_config: dict[str, Any] | None = None) -> str:
+    return DEFAULT_BASE_URL.rstrip("/")
 
 
 def _parse_dt(value: str | None) -> datetime | None:

@@ -123,6 +123,7 @@ export default function Sources() {
       </label>
 
       <form onSubmit={(event) => void onSave(event)} className="space-y-4 rounded-2xl border border-rule bg-white/50 p-5">
+        {current.description && <p className="text-sm text-ink/70">{current.description}</p>}
         {current.config_fields.map((field) => (
           <FieldInput
             key={field.key}

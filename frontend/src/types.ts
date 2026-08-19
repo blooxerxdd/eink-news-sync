@@ -64,6 +64,7 @@ export interface SourceInfo {
   display_name: string;
   is_active: boolean;
   configured: boolean;
+  description: string | null;
   config_fields: ConfigField[];
 }
 
