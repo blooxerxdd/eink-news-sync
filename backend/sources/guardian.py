@@ -127,6 +127,16 @@ class GuardianSource(NewsSource):
         # arrive fully populated. Return that copy instead of a second round trip.
         return self.stub_to_article(stub)
 
+    def organize_digest(
+        self, articles: list[Article], config: dict[str, Any] | None = None
+    ) -> list[tuple[str, list[Article]]]:
+        from article_groups import group_articles_by_section
+
+        return group_articles_by_section(
+            articles,
+            section_order=_normalize_sections((config or {}).get("sections")),
+        )
+
 
 def _normalize_sections(raw: Any) -> list[str]:
     if not raw:
@@ -152,18 +162,24 @@ def _item_to_stub(item: dict[str, Any]) -> ArticleStub:
     published_at = _parse_dt(item.get("webPublicationDate"))
     body_text = html_to_text(body_html) if body_html else ""
 
+    section_id = item.get("sectionId")
+    section_id = str(section_id).strip() if section_id else None
+    section_name = item.get("sectionName")
+    section_name = str(section_name).strip() if section_name else None
+
     return ArticleStub(
         source_id="guardian",
         external_id=str(item.get("id") or item.get("webUrl") or ""),
         title=str(item.get("webTitle") or "Untitled"),
         url=str(item.get("webUrl") or ""),
-        section=item.get("sectionId") or item.get("sectionName"),
+        section=section_name or section_id,
         published_at=published_at,
         byline=byline,
         body_text=body_text or None,
         body_html=body_html,
         trail_text=html_to_text(trail) if trail else None,
         word_count=word_count or (len(body_text.split()) if body_text else None),
+        section_id=section_id,
     )
 
 

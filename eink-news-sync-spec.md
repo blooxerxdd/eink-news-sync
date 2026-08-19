@@ -159,8 +159,9 @@ Rationale: `runs` + `articles` gives the UI a real history view ("last 30 syncs,
 ## 6. Digest builder
 
 - Input: list of `Article` objects from one source in the current run.
-- Output: one EPUB per source (`ebooklib`), one chapter per article, title page includes date + source name + article count.
-- Naming: `digest-YYYY-MM-DD-{source_id}.epub`, stored under `/data/digests/`. Same-day re-runs overwrite that source’s file only.
+- Output: **one EPUB per source per day** (`ebooklib`), one chapter per article, title page includes date + source name + article count. Same-day re-runs overwrite that source’s file only — never split into per-section or per-article files.
+- Chapters inside that file are grouped by `Article.section` (Guardian uses the user’s configured section order, then remaining sections A–Z, then uncategorized). Newest first within a section. Nested table of contents plus a section divider page.
+- Naming: `digest-YYYY-MM-DD-{source_id}.epub`, stored under `/data/digests/`.
 - Keep only the last N digests **per source** on disk (configurable, default 14) — delete older files on each successful run to avoid unbounded growth on the eReader's SD-mirrored downloads folder.
 - Digest builder is source-agnostic — it only depends on the `Article` dataclass, not on any specific `NewsSource`.
 - All source digests appear as separate entries in the same OPDS catalog (`GET /opds`).

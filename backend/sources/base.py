@@ -17,6 +17,7 @@ class ArticleStub:
     body_html: str | None = None
     trail_text: str | None = None
     word_count: int | None = None
+    section_id: str | None = None
 
 
 @dataclass
@@ -32,6 +33,7 @@ class Article:
     body_html: str | None
     trail_text: str | None = None
     word_count: int | None = None
+    section_id: str | None = None
 
 
 @dataclass
@@ -84,4 +86,13 @@ class NewsSource(ABC):
             body_html=stub.body_html,
             trail_text=stub.trail_text,
             word_count=stub.word_count or (len(body_text.split()) if body_text else None),
+            section_id=stub.section_id,
         )
+
+    def organize_digest(
+        self, articles: list[Article], config: dict[str, Any] | None = None
+    ) -> list[tuple[str, list[Article]]]:
+        """Group articles for one EPUB. Override to apply source-specific section order."""
+        from article_groups import group_articles_by_section
+
+        return group_articles_by_section(articles)
