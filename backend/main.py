@@ -49,7 +49,7 @@ logging.basicConfig(level=logging.INFO)
 FRONTEND_DIST = Path(__file__).resolve().parent.parent / "frontend" / "dist"
 SAFE_DIGEST = re.compile(r"^digest-\d{4}-\d{2}-\d{2}\.epub$")
 
-LAN_WARNING = "LAN-only. Do not port-forward or expose this service to the internet."
+LAN_WARNING = "Do not port-forward or expose this service to the internet."
 
 
 @asynccontextmanager

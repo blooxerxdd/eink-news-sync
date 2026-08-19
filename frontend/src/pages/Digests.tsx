@@ -24,7 +24,7 @@ export default function Digests() {
       {status && (
         <section className="space-y-4 rounded-2xl border border-rule bg-white/50 p-5">
           <Copyable label="Local IP" value={status.lan_ip ?? "Not detected"} />
-          <Copyable label="OPDS URL for the Xteink X3" value={status.opds_url} />
+          <Copyable label="OPDS URL for the e-reader" value={status.opds_url} />
         </section>
       )}
       <div className="overflow-x-auto rounded-2xl border border-rule bg-white/50">

@@ -50,28 +50,43 @@ def load_json(raw: str | None) -> dict[str, Any]:
 
 
 def get_active_source_row(session: Session) -> SourceConfig | None:
-    return session.exec(select(SourceConfig).where(SourceConfig.is_active == True)).first()  # noqa: E712
+    rows = get_active_source_rows(session)
+    return rows[0] if rows else None
 
 
-def activate_source(session: Session, source_id: str) -> SourceConfig:
+def get_active_source_rows(session: Session) -> list[SourceConfig]:
+    return list(session.exec(select(SourceConfig).where(SourceConfig.is_active == True)).all())  # noqa: E712
+
+
+def activate_source(session: Session, source_id: str, *, active: bool = True) -> SourceConfig:
     rows = session.exec(select(SourceConfig)).all()
     target: SourceConfig | None = None
     for row in rows:
-        row.is_active = row.source_id == source_id
-        row.updated_at = utcnow()
         if row.source_id == source_id:
+            row.is_active = active
+            row.updated_at = utcnow()
             target = row
     if target is None:
-        target = SourceConfig(source_id=source_id, is_active=True, config_json="{}")
+        target = SourceConfig(source_id=source_id, is_active=active, config_json="{}")
         session.add(target)
-    setting = session.get(AppSetting, "active_source_id")
-    if setting:
-        setting.value = source_id
-    else:
-        session.add(AppSetting(key="active_source_id", value=source_id))
+    _sync_active_source_setting(session)
     session.commit()
     session.refresh(target)
     return target
+
+
+def _sync_active_source_setting(session: Session) -> None:
+    actives = [
+        row.source_id
+        for row in session.exec(select(SourceConfig).where(SourceConfig.is_active == True)).all()  # noqa: E712
+    ]
+    value = ",".join(actives)
+    setting = session.get(AppSetting, "active_source_id")
+    if setting:
+        setting.value = value
+        session.add(setting)
+    else:
+        session.add(AppSetting(key="active_source_id", value=value))
 
 
 def serialize_run(run: Run, *, include_articles: bool = False) -> dict[str, Any]:

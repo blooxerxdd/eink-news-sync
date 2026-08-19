@@ -10,7 +10,7 @@ from database import engine, get_settings_map
 from models import Run, utcnow
 from sources import SOURCES
 from sync_job import execute_run
-from util import get_active_source_row
+from util import get_active_source_rows
 
 logger = logging.getLogger("eink-news-sync")
 
@@ -32,12 +32,13 @@ async def trigger_run(*, source_id: str | None = None) -> Run:
         raise RunInProgress("A sync is already in progress")
     await _run_lock.acquire()
     try:
-        run = _create_run(source_id)
+        source_ids = _resolve_source_ids(source_id)
+        first = _create_run(source_ids[0])
     except Exception:
         _run_lock.release()
         raise
-    asyncio.create_task(_run_wrapper(run.id))
-    return run
+    asyncio.create_task(_run_wrapper(first.id, source_ids[1:]))
+    return first
 
 
 def start_scheduler() -> None:
@@ -83,14 +84,17 @@ def next_run_iso() -> str | None:
     return job.next_run_time.isoformat()
 
 
-def _create_run(source_id: str | None) -> Run:
+def _resolve_source_ids(source_id: str | None) -> list[str]:
+    if source_id:
+        return [source_id]
     with Session(engine) as session:
-        if source_id is None:
-            row = get_active_source_row(session)
-            if row is None:
-                source_id = next(iter(SOURCES))
-            else:
-                source_id = row.source_id
+        rows = get_active_source_rows(session)
+    ids = [row.source_id for row in rows if row.source_id in SOURCES]
+    return ids or [next(iter(SOURCES))]
+
+
+def _create_run(source_id: str) -> Run:
+    with Session(engine) as session:
         run = Run(started_at=utcnow(), status="running", source_id=source_id)
         session.add(run)
         session.commit()
@@ -98,11 +102,14 @@ def _create_run(source_id: str | None) -> Run:
         return run
 
 
-async def _run_wrapper(run_id: int) -> None:
+async def _run_wrapper(first_run_id: int, remaining_source_ids: list[str]) -> None:
     try:
-        await execute_run(run_id)
+        await execute_run(first_run_id)
+        for extra_id in remaining_source_ids:
+            run = _create_run(extra_id)
+            await execute_run(run.id)
     except Exception:
-        logger.exception("Unhandled error in run %s", run_id)
+        logger.exception("Unhandled error while building source digests")
     finally:
         if _run_lock.locked():
             _run_lock.release()

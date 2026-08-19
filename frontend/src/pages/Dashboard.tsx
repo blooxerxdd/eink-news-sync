@@ -121,7 +121,7 @@ export default function Dashboard() {
             {status.lan_ips.length > 1 && (
               <p className="text-sm text-ink/60">Other addresses: {status.lan_ips.filter((ip) => ip !== status.lan_ip).join(", ")}</p>
             )}
-            <p className="text-sm text-ink/60">Paste the OPDS URL into the Xteink X3 (CrossPoint) OPDS client. Use the local IP, not 127.0.0.1 — that only works on this computer.</p>
+            <p className="text-sm text-ink/60">Paste the OPDS URL into the e-reader’s OPDS client. Use the local IP, not 127.0.0.1 — that only works on this computer.</p>
           </div>
         </Card>
       )}

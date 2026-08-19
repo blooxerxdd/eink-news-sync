@@ -1,10 +1,10 @@
 # eink-news-sync
 
-Self-hosted daily news digest for a LAN e-reader.
+Self-hosted daily news digest for an e-reader.
 
-The service pulls articles from a pluggable source (The Guardian in v1), builds one EPUB per day, and serves it over OPDS so a Xteink X3 (CrossPoint firmware) can pull it when you put the device into File Transfer/OPDS mode.
+The service pulls articles from a pluggable source (The Guardian in v1), builds one EPUB per day, and serves it over OPDS so an e-reader can pull it when you put the device into File Transfer/OPDS mode.
 
-**Do not port-forward this. Do not expose it to the internet.** There is no authentication in v1. It is meant to listen on your home LAN only.
+**Do not port-forward this. Do not expose it to the internet.** There is no authentication in v1.
 
 ## Quick start (Distrobox / Distro Shelf)
 

@@ -88,7 +88,7 @@ def test_opds_feed(client):
 
 
 def test_opds_hit_appears_in_device_log(client):
-    client.get("/opds", headers={"User-Agent": "Xteink-Test/1.0"})
+    client.get("/opds", headers={"User-Agent": "OPDS-Test/1.0"})
     devices = client.get("/api/devices").json()
     assert devices
     assert any(row["last_path"] == "/opds" for row in devices)
@@ -96,7 +96,7 @@ def test_opds_hit_appears_in_device_log(client):
     assert events
     assert events[0]["path"] == "/opds"
     assert events[0]["status_code"] == 200
-    assert events[0]["user_agent"] == "Xteink-Test/1.0"
+    assert events[0]["user_agent"] == "OPDS-Test/1.0"
 
 
 def test_api_status_is_not_logged_as_device(client):

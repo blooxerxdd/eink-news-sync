@@ -5,10 +5,10 @@
 A self-hosted service, running in Docker on a home network, that:
 - Pulls current news articles from a pluggable **source** (Guardian Open Platform to start; FT and others later).
 - Builds a daily digest EPUB.
-- Serves it via an OPDS catalog for a Xteink X3 (CrossPoint firmware) to pull.
+- Serves it via an OPDS catalog for an e-reader to pull.
 - Exposes a local web UI for configuration, run history, and browsing what was fetched.
 
-Single user, single device, LAN-only. No auth hardening beyond "don't expose this to the internet" is in scope for v1.
+Single user, single device. No auth hardening beyond "don't expose this to the internet" is in scope for v1.
 
 ## 2. Non-negotiable design constraint
 
@@ -42,8 +42,8 @@ The e-reader is not always reachable — it sleeps and only runs its own web ser
 │  └───────────┘                                             │
 └─────────────────────────────────────────────────────────┘
          ▲                                        ▲
-         │ browser (you, on LAN)                  │ OPDS client
-         │                                         │ (Xteink X3)
+         │ browser (you)                          │ OPDS client
+         │                                         │ (e-reader)
 ```
 
 Recommend a **single backend process** (Python) exposing both the REST API and the OPDS/file endpoints, plus a separate lightweight frontend (static SPA) served either by the same backend or its own nginx container. Keep it to one backend service for v1 — don't over-decompose into microservices for a single-user home app.
@@ -64,7 +64,7 @@ Concrete choices, not open-ended — the implementing agent should use these unl
 | HTTP client (for source APIs) | httpx | Async-friendly, works cleanly inside FastAPI/APScheduler async jobs. |
 | EPUB generation | ebooklib | Matches the earlier prototype; well-supported, simple chapter/spine API. |
 | OPDS feed generation | Hand-written Atom/XML via Python's `xml.etree.ElementTree` or f-strings | The feed shape is small and fixed (see §7) — a full OPDS library is unnecessary weight for this. |
-| Frontend framework | React + TypeScript, built with Vite | Modern, fast local dev loop, no server-side rendering complexity needed for a LAN dashboard. |
+| Frontend framework | React + TypeScript, built with Vite | Modern, fast local dev loop, no server-side rendering complexity needed for a local dashboard. |
 | Frontend styling | Tailwind CSS | Fast to build a clean utility-driven UI without a component library dependency; add shadcn/ui components only if the forms/tables in §10 need more polish than plain Tailwind gives easily. |
 | Frontend data fetching | Plain `fetch` against `/api/*`, or TanStack Query if polling (e.g. run status while a sync is in progress) gets unwieldy with plain fetch | Keep it minimal until the UI actually needs caching/refetch logic. |
 | Frontend hosting | Static build (`vite build`) served by FastAPI's `StaticFiles`, same origin as the API | Avoids CORS configuration and keeps it one container, one port. |
@@ -168,7 +168,7 @@ Rationale: `runs` + `articles` gives the UI a real history view ("last 30 syncs,
 
 - `GET /opds` — Atom/OPDS catalog. Root feed lists available digests (most recent first, e.g. last 7), each with an acquisition link.
 - `GET /download/{filename}` — serves the EPUB file.
-- No auth (LAN-only, matches current threat model). Document this assumption prominently in the README/UI ("do not port-forward this").
+- No auth (do not expose this to the internet). Document this assumption prominently in the README/UI ("do not port-forward this").
 
 ## 8. Scheduler
 
@@ -208,7 +208,7 @@ Secrets (API keys) are stored server-side only; `GET config` endpoints return th
 
 ## 10. Frontend (local web UI)
 
-Single-page app, served locally (same origin as the API is simplest — avoid CORS complexity for v1). No login — LAN-only tool.
+Single-page app, served locally (same origin as the API is simplest — avoid CORS complexity for v1). No login — do not expose this tool.
 
 **Pages/views:**
 

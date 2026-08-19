@@ -4,23 +4,54 @@ from pathlib import Path
 from xml.etree.ElementTree import Element, SubElement, tostring
 
 from config import DIGESTS_DIR, OPDS_FEED_LIMIT
+from digest_builder import parse_digest_filename
+from sources import SOURCES
 
 ATOM = "http://www.w3.org/2005/Atom"
 
 
-def list_digest_files(directory: Path | None = None) -> list[Path]:
+def list_digest_files(
+    directory: Path | None = None,
+    *,
+    limit_per_source: int | None = None,
+) -> list[Path]:
     directory = directory or DIGESTS_DIR
     if not directory.exists():
         return []
-    return sorted(directory.glob("digest-*.epub"), key=lambda p: p.name, reverse=True)
+    files = sorted(directory.glob("digest-*.epub"), key=lambda p: p.name, reverse=True)
+    if limit_per_source is None:
+        return files
+    counts: dict[str, int] = {}
+    selected: list[Path] = []
+    for path in files:
+        parsed = parse_digest_filename(path.name)
+        source_id = parsed[1] if parsed else ""
+        used = counts.get(source_id, 0)
+        if used >= limit_per_source:
+            continue
+        counts[source_id] = used + 1
+        selected.append(path)
+    return selected
 
 
 def digest_public_url(filename: str, base_url: str) -> str:
     return f"{base_url.rstrip('/')}/download/{filename}"
 
 
+def digest_entry_title(filename: str) -> str:
+    parsed = parse_digest_filename(filename)
+    if parsed is None:
+        return Path(filename).stem
+    date_iso, source_id = parsed
+    if source_id:
+        source = SOURCES.get(source_id)
+        label = source.display_name if source else source_id
+        return f"{label} — {date_iso}"
+    return f"Daily Digest — {date_iso}"
+
+
 def build_opds_feed(*, title: str, base_url: str, limit: int = OPDS_FEED_LIMIT) -> bytes:
-    files = list_digest_files()[:limit]
+    files = list_digest_files(limit_per_source=limit)
     updated = (
         _file_mtime(files[0]).strftime("%Y-%m-%dT%H:%M:%SZ")
         if files
@@ -47,10 +78,9 @@ def build_opds_feed(*, title: str, base_url: str, limit: int = OPDS_FEED_LIMIT) 
     for path in files:
         mtime = _file_mtime(path)
         stamp = mtime.strftime("%Y-%m-%dT%H:%M:%SZ")
-        display_date = path.stem.replace("digest-", "")
         entry = SubElement(feed, "entry")
         _el(entry, "id", f"urn:eink-news-sync:{path.name}")
-        _el(entry, "title", f"Daily Digest — {display_date}")
+        _el(entry, "title", digest_entry_title(path.name))
         _el(entry, "updated", stamp)
         _el(entry, "published", stamp)
         summary = SubElement(entry, "summary")

@@ -107,6 +107,7 @@ async def execute_run(run_id: int) -> None:
                 articles,
                 output_dir=DIGESTS_DIR,
                 source_name=source.display_name,
+                source_id=source.source_id,
             )
             digest_filename = path.name
             prune_digests(DIGESTS_DIR, retention)

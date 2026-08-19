@@ -1,3 +1,4 @@
+import re
 from datetime import date
 from html import escape as html_escape
 from pathlib import Path
@@ -16,21 +17,45 @@ h2 { font-size: 1.15em; }
 a { text-decoration: underline; }
 """
 
+# digest-YYYY-MM-DD.epub (legacy) or digest-YYYY-MM-DD-{source}.epub
+DIGEST_FILENAME = re.compile(
+    r"^digest-(\d{4}-\d{2}-\d{2})(?:-([a-z0-9][a-z0-9_-]*))?\.epub$"
+)
+
+
+def slug_source_id(source_id: str) -> str:
+    slug = re.sub(r"[^a-z0-9_-]+", "-", source_id.lower()).strip("-_")
+    return slug or "source"
+
+
+def parse_digest_filename(name: str) -> tuple[str, str] | None:
+    """Return (date_iso, source_id). source_id is empty for legacy date-only names."""
+    match = DIGEST_FILENAME.match(name)
+    if not match:
+        return None
+    return match.group(1), match.group(2) or ""
+
+
+def digest_filename(digest_date: date, source_id: str) -> str:
+    return f"digest-{digest_date.isoformat()}-{slug_source_id(source_id)}.epub"
+
 
 def build_digest(
     articles: list[Article],
     *,
     output_dir: Path,
     source_name: str,
+    source_id: str,
     digest_date: date | None = None,
 ) -> Path:
     digest_date = digest_date or date.today()
-    filename = f"digest-{digest_date.isoformat()}.epub"
+    slug = slug_source_id(source_id)
+    filename = digest_filename(digest_date, slug)
     output_path = output_dir / filename
 
     book = epub.EpubBook()
-    book.set_identifier(f"eink-news-sync-{digest_date.isoformat()}")
-    book.set_title(f"Daily Digest — {digest_date.isoformat()}")
+    book.set_identifier(f"eink-news-sync-{digest_date.isoformat()}-{slug}")
+    book.set_title(f"{source_name} — {digest_date.isoformat()}")
     book.set_language("en")
     book.add_author(source_name)
 
@@ -45,9 +70,9 @@ def build_digest(
     title_page = epub.EpubHtml(title="Title", file_name="title.xhtml", lang="en")
     title_page.add_item(style)
     title_page.content = f"""
-      <h1>Daily Digest</h1>
+      <h1>{html_escape(source_name)}</h1>
       <p class="meta">{html_escape(digest_date.strftime("%A %d %B %Y"))}</p>
-      <p class="meta">{html_escape(source_name)} · {len(articles)} article{"s" if len(articles) != 1 else ""}</p>
+      <p class="meta">{len(articles)} article{"s" if len(articles) != 1 else ""}</p>
     """
     book.add_item(title_page)
 
@@ -76,16 +101,22 @@ def build_digest(
 
 
 def prune_digests(output_dir: Path, retention: int) -> list[str]:
-    """Keep the newest `retention` digest-*.epub files. Returns deleted filenames."""
-    files = sorted(
-        output_dir.glob("digest-*.epub"),
-        key=lambda p: p.name,
-        reverse=True,
-    )
+    """Keep the newest `retention` files per source. Returns deleted filenames."""
+    groups: dict[str, list[Path]] = {}
+    for path in output_dir.glob("digest-*.epub"):
+        parsed = parse_digest_filename(path.name)
+        if parsed is None:
+            continue
+        _date, source_id = parsed
+        groups.setdefault(source_id, []).append(path)
+
     deleted: list[str] = []
-    for stale in files[max(0, retention) :]:
-        stale.unlink(missing_ok=True)
-        deleted.append(stale.name)
+    keep = max(0, retention)
+    for files in groups.values():
+        files.sort(key=lambda p: p.name, reverse=True)
+        for stale in files[keep:]:
+            stale.unlink(missing_ok=True)
+            deleted.append(stale.name)
     return deleted
 
 
