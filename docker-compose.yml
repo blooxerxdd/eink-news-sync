@@ -1,0 +1,22 @@
+services:
+  eink-news-sync:
+    build: .
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/data:Z
+    environment:
+      DATA_DIR: /data
+      PORT: "8080"
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/api/status')",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 5
