@@ -6,6 +6,7 @@ from config import DIGESTS_DIR
 from database import engine, get_settings_map
 from digest_builder import build_digest, prune_digests
 from models import ArticleRecord, Run, SourceConfig, utcnow
+from source_store import load_ok_articles, load_ok_ids, upsert_article, upsert_failed
 from sources import get_source
 from sources.base import Article
 from util import load_json
@@ -29,6 +30,7 @@ async def execute_run(run_id: int) -> None:
         config = load_json(source_row.config_json)
         max_articles = int(settings.get("max_articles") or 20)
         retention = int(settings.get("digest_retention") or 14)
+        known_ok_ids = load_ok_ids(session, run.source_id)
 
     try:
         source = get_source(run.source_id)
@@ -47,16 +49,23 @@ async def execute_run(run_id: int) -> None:
                 _fail(session, run, "; ".join(problems))
         return
 
-    articles: list[Article] = []
+    is_archive = source.digest_mode == "archive"
+    if source.ignores_max_items:
+        max_articles = max(max_articles, 10_000)
+
+    new_articles: list[Article] = []
     failed = 0
     records: list[ArticleRecord] = []
+    failed_stubs: list[tuple] = []
 
     try:
-        stubs = await source.get_headlines(config, max_articles)
+        stubs = await source.get_headlines(config, max_articles, known_ok_ids=known_ok_ids)
         for stub in stubs:
             article = await source.fetch_article(config, stub)
             if article is None:
                 failed += 1
+                status = "failed" if is_archive else ("skipped_paywall" if not stub.body_html else "failed")
+                failed_stubs.append((stub, status))
                 records.append(
                     ArticleRecord(
                         run_id=run_id,
@@ -67,12 +76,12 @@ async def execute_run(run_id: int) -> None:
                         section=stub.section,
                         published_at=stub.published_at,
                         byline=stub.byline,
-                        fetch_status="skipped_paywall" if not stub.body_html else "failed",
+                        fetch_status=status,
                         word_count=stub.word_count,
                     )
                 )
                 continue
-            articles.append(article)
+            new_articles.append(article)
             records.append(
                 ArticleRecord(
                     run_id=run_id,
@@ -94,36 +103,55 @@ async def execute_run(run_id: int) -> None:
             if run:
                 for rec in records:
                     session.add(rec)
-                run.articles_fetched = len(articles)
+                _persist_posts(session, new_articles, failed_stubs, is_archive)
+                run.articles_fetched = len(new_articles)
                 run.articles_failed = failed
                 _fail(session, run, str(exc))
         return
 
+    digest_articles = new_articles
+    if is_archive:
+        with Session(engine) as session:
+            _persist_posts(session, new_articles, failed_stubs, True)
+            session.commit()
+            digest_articles = load_ok_articles(session, source.source_id)
+
     digest_filename = None
     error_message = None
-    if articles:
+    if digest_articles:
         try:
             path = build_digest(
-                articles,
+                digest_articles,
                 output_dir=DIGESTS_DIR,
                 source_name=source.display_name,
                 source_id=source.source_id,
-                groups=source.organize_digest(articles, config),
+                groups=source.organize_digest(digest_articles, config),
+                filename=source.output_filename,
+                persistent=is_archive,
+                date_under_title=is_archive,
             )
             digest_filename = path.name
-            prune_digests(DIGESTS_DIR, retention)
+            if not is_archive:
+                prune_digests(DIGESTS_DIR, retention)
         except Exception as exc:
             logger.exception("Digest build failed")
             error_message = f"Articles fetched but EPUB build failed: {exc}"
+    elif is_archive:
+        error_message = None
     else:
         error_message = "No articles with usable body text were returned."
 
-    if digest_filename and failed == 0:
+    if is_archive and digest_filename and failed == 0:
+        status = "success"
+        error_message = None
+    elif digest_filename and failed == 0:
         status = "success"
     elif digest_filename:
         status = "partial"
     else:
         status = "error"
+        if not error_message:
+            error_message = "No articles with usable body text were returned."
 
     with Session(engine) as session:
         run = session.get(Run, run_id)
@@ -131,7 +159,9 @@ async def execute_run(run_id: int) -> None:
             return
         for rec in records:
             session.add(rec)
-        run.articles_fetched = len(articles)
+        if not is_archive:
+            _persist_posts(session, new_articles, failed_stubs, False)
+        run.articles_fetched = len(new_articles)
         run.articles_failed = failed
         run.digest_filename = digest_filename
         run.error_message = error_message
@@ -143,10 +173,19 @@ async def execute_run(run_id: int) -> None:
             "Run %s finished status=%s fetched=%s failed=%s digest=%s",
             run_id,
             status,
-            len(articles),
+            len(new_articles),
             failed,
             digest_filename,
         )
+
+
+def _persist_posts(session: Session, articles: list[Article], failed_stubs: list, is_archive: bool) -> None:
+    if not is_archive:
+        return
+    for article in articles:
+        upsert_article(session, article)
+    for stub, status in failed_stubs:
+        upsert_failed(session, stub, status)
 
 
 def _fail(session: Session, run: Run, message: str) -> None:

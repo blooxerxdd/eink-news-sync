@@ -6,6 +6,7 @@ the schema needs to change after real digests have accumulated.
 
 from datetime import datetime, timezone
 
+from sqlalchemy import UniqueConstraint
 from sqlmodel import Field, Relationship, SQLModel
 
 
@@ -55,6 +56,28 @@ class ArticleRecord(SQLModel, table=True):
     fetch_status: str
     word_count: int | None = None
     run: Run | None = Relationship(back_populates="articles")
+
+
+class SourcePost(SQLModel, table=True):
+    """Persistent article bodies for archive sources. Independent of run history."""
+
+    __tablename__ = "source_posts"
+    __table_args__ = (UniqueConstraint("source_id", "external_id", name="uq_source_post"),)
+
+    id: int | None = Field(default=None, primary_key=True)
+    source_id: str = Field(index=True)
+    external_id: str = Field(index=True)
+    title: str
+    url: str
+    section: str | None = None
+    published_at: datetime | None = None
+    byline: str | None = None
+    body_text: str = ""
+    body_html: str | None = None
+    trail_text: str | None = None
+    fetch_status: str
+    word_count: int | None = None
+    updated_at: datetime = Field(default_factory=utcnow)
 
 
 class AppSetting(SQLModel, table=True):

@@ -23,6 +23,14 @@ def test_sources_list_includes_schema(client):
     assert sources[0]["source_id"] == "guardian"
     keys = {field["key"] for field in sources[0]["config_fields"]}
     assert keys == {"api_key", "sections", "lookback_hours"}
+    arjay = next(s for s in sources if s["source_id"] == "arjay_blog")
+    assert arjay["display_name"] == "The Dev Download"
+    assert arjay["configured"] is True
+    arjay_keys = {field["key"] for field in arjay["config_fields"]}
+    assert arjay_keys == {"base_url", "chapter_order"}
+    order_field = next(f for f in arjay["config_fields"] if f["key"] == "chapter_order")
+    assert order_field["type"] == "select"
+    assert {opt["value"] for opt in order_field["options"]} == {"oldest", "newest"}
 
 
 def test_config_roundtrip_masks_secret(client):
@@ -116,6 +124,26 @@ def test_download_accepts_source_digest_filename(client, data_dir):
     path.write_bytes(b"fake-epub")
     response = client.get("/download/digest-2026-08-18-guardian.epub")
     assert response.status_code == 200
+
+
+def test_download_accepts_archive_filename(client, data_dir):
+    path = data_dir / "digests" / "arjay-blog-archive.epub"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"fake-archive")
+    response = client.get("/download/arjay-blog-archive.epub")
+    assert response.status_code == 200
+
+
+def test_opds_lists_archive_without_date(client, data_dir):
+    digest_dir = data_dir / "digests"
+    digest_dir.mkdir(parents=True, exist_ok=True)
+    (digest_dir / "arjay-blog-archive.epub").write_bytes(b"archive")
+    response = client.get("/opds")
+    assert response.status_code == 200
+    body = response.content
+    assert b"The Dev Download" in body
+    assert b"/download/arjay-blog-archive.epub" in body
+    assert "The Dev Download — ".encode() not in body
 
 
 def test_opds_lists_one_entry_per_source(client, data_dir):

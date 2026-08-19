@@ -23,6 +23,7 @@ a { text-decoration: underline; }
 DIGEST_FILENAME = re.compile(
     r"^digest-(\d{4}-\d{2}-\d{2})(?:-([a-z0-9][a-z0-9_-]*))?\.epub$"
 )
+PERSISTENT_FILENAME = re.compile(r"^[a-z0-9][a-z0-9_-]*\.epub$")
 
 
 def slug_source_id(source_id: str) -> str:
@@ -38,6 +39,32 @@ def parse_digest_filename(name: str) -> tuple[str, str] | None:
     return match.group(1), match.group(2) or ""
 
 
+def registered_output_filenames() -> set[str]:
+    from sources import SOURCES
+
+    return {source.output_filename for source in SOURCES.values() if source.output_filename}
+
+
+def is_allowed_epub_filename(name: str) -> bool:
+    if "/" in name or "\\" in name or ".." in name:
+        return False
+    if DIGEST_FILENAME.match(name):
+        return True
+    return name in registered_output_filenames() and bool(PERSISTENT_FILENAME.match(name))
+
+
+def digest_source_id(filename: str) -> str | None:
+    parsed = parse_digest_filename(filename)
+    if parsed is not None:
+        return parsed[1] or None
+    from sources import SOURCES
+
+    for source in SOURCES.values():
+        if source.output_filename == filename:
+            return source.source_id
+    return None
+
+
 def digest_filename(digest_date: date, source_id: str) -> str:
     return f"digest-{digest_date.isoformat()}-{slug_source_id(source_id)}.epub"
 
@@ -50,17 +77,24 @@ def build_digest(
     source_id: str,
     digest_date: date | None = None,
     groups: list[tuple[str, list[Article]]] | None = None,
+    filename: str | None = None,
+    persistent: bool = False,
+    date_under_title: bool = False,
 ) -> Path:
     digest_date = digest_date or date.today()
     slug = slug_source_id(source_id)
-    filename = digest_filename(digest_date, slug)
-    output_path = output_dir / filename
+    resolved_name = filename or digest_filename(digest_date, slug)
+    output_path = output_dir / resolved_name
     groups = groups if groups is not None else group_articles_by_section(articles)
     article_count = sum(len(chunk) for _, chunk in groups)
 
     book = epub.EpubBook()
-    book.set_identifier(f"eink-news-sync-{digest_date.isoformat()}-{slug}")
-    book.set_title(f"{source_name} — {digest_date.isoformat()}")
+    if persistent:
+        book.set_identifier(f"eink-news-sync-{Path(resolved_name).stem}")
+        book.set_title(source_name)
+    else:
+        book.set_identifier(f"eink-news-sync-{digest_date.isoformat()}-{slug}")
+        book.set_title(f"{source_name} — {digest_date.isoformat()}")
     book.set_language("en")
     book.add_author(source_name)
 
@@ -74,11 +108,14 @@ def build_digest(
 
     title_page = epub.EpubHtml(title="Title", file_name="title.xhtml", lang="en")
     title_page.add_item(style)
-    title_bits = [
-        f"<h1>{html_escape(source_name)}</h1>",
-        f'<p class="meta">{html_escape(digest_date.strftime("%A %d %B %Y"))}</p>',
-        f'<p class="meta">{article_count} article{"s" if article_count != 1 else ""}</p>',
-    ]
+    title_bits = [f"<h1>{html_escape(source_name)}</h1>"]
+    if not persistent:
+        title_bits.append(
+            f'<p class="meta">{html_escape(digest_date.strftime("%A %d %B %Y"))}</p>'
+        )
+    title_bits.append(
+        f'<p class="meta">{article_count} article{"s" if article_count != 1 else ""}</p>'
+    )
     labeled = [(label, chunk) for label, chunk in groups if label]
     if labeled:
         breakdown = "<br/>".join(
@@ -115,7 +152,7 @@ def build_digest(
                 lang="en",
             )
             chapter.add_item(style)
-            chapter.content = _article_html(article)
+            chapter.content = _article_html(article, date_under_title=date_under_title)
             book.add_item(chapter)
             spine.append(chapter)
             section_chapters.append(chapter)
@@ -171,14 +208,20 @@ def prune_digests(output_dir: Path, retention: int) -> list[str]:
     return deleted
 
 
-def _article_html(article: Article) -> str:
+def _readable_date(published: date) -> str:
+    return f"{published.strftime('%b')} {published.day}, {published.year}"
+
+
+def _article_html(article: Article, *, date_under_title: bool = False) -> str:
     parts = [f"<h1>{html_escape(article.title)}</h1>"]
+    if date_under_title and article.published_at:
+        parts.append(f'<p class="meta">{html_escape(_readable_date(article.published_at))}</p>')
     meta_bits = []
     if article.byline:
         meta_bits.append(html_escape(article.byline))
     if article.section:
         meta_bits.append(html_escape(article.section))
-    if article.published_at:
+    if article.published_at and not date_under_title:
         meta_bits.append(html_escape(article.published_at.strftime("%Y-%m-%d %H:%M UTC")))
     if meta_bits:
         parts.append(f'<p class="meta">{" · ".join(meta_bits)}</p>')

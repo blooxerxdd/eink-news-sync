@@ -52,10 +52,11 @@ export interface StatusPayload {
 export interface ConfigField {
   key: string;
   label: string;
-  type: "secret" | "text" | "number" | "tags" | string;
+  type: "secret" | "text" | "number" | "tags" | "select" | string;
   required: boolean;
   default: unknown;
   help: string | null;
+  options?: { value: string; label: string }[] | null;
 }
 
 export interface SourceInfo {

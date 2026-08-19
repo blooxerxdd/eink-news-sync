@@ -20,7 +20,7 @@ from access_log import is_device_path, list_devices, list_events, record_access
 from config import DIGESTS_DIR, PORT, TESTING
 from database import get_session, get_settings_map, init_db
 from models import ArticleRecord, Run, SourceConfig, utcnow
-from digest_builder import DIGEST_FILENAME, parse_digest_filename
+from digest_builder import digest_source_id, is_allowed_epub_filename
 from opds import build_opds_feed, digest_entry_title, list_digest_files
 from scheduler import (
     RunInProgress,
@@ -47,7 +47,6 @@ from util import (
 logging.basicConfig(level=logging.INFO)
 
 FRONTEND_DIST = Path(__file__).resolve().parent.parent / "frontend" / "dist"
-SAFE_DIGEST = DIGEST_FILENAME
 
 LAN_WARNING = "Do not port-forward or expose this service to the internet."
 
@@ -356,7 +355,7 @@ def api_list_digests(request: Request) -> list[dict[str, Any]]:
         {
             "filename": path.name,
             "title": digest_entry_title(path.name),
-            "source_id": (parse_digest_filename(path.name) or ("", ""))[1] or None,
+            "source_id": digest_source_id(path.name),
             "size_bytes": path.stat().st_size,
             "modified_at": datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc).isoformat(),
             "download_url": f"{_base_url(request)}/api/digests/{path.name}/download",
@@ -384,7 +383,7 @@ def download_digest(filename: str) -> FileResponse:
 
 
 def _serve_digest(filename: str) -> FileResponse:
-    if not SAFE_DIGEST.match(filename):
+    if not is_allowed_epub_filename(filename):
         raise HTTPException(status_code=400, detail="Invalid digest filename")
     path = DIGESTS_DIR / filename
     if not path.is_file():
@@ -396,8 +395,7 @@ def _latest_digests_by_source() -> list[dict[str, str]]:
     seen: set[str] = set()
     latest: list[dict[str, str]] = []
     for path in list_digest_files():
-        parsed = parse_digest_filename(path.name)
-        source_id = parsed[1] if parsed else ""
+        source_id = digest_source_id(path.name) or ""
         key = source_id or path.name
         if key in seen:
             continue

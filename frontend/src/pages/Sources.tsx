@@ -245,6 +245,27 @@ function FieldInput({
     );
   }
 
+  if (field.type === "select") {
+    const options = field.options ?? [];
+    return (
+      <label className="block text-sm">
+        <span className="font-medium">{field.label}</span>
+        <select
+          className="mt-1 w-full rounded-xl border border-rule bg-white px-3 py-2"
+          value={value == null ? String(field.default ?? "") : String(value)}
+          onChange={(event) => onChange(event.target.value)}
+        >
+          {options.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+        {field.help && <p className="mt-1 text-xs text-ink/50">{field.help}</p>}
+      </label>
+    );
+  }
+
   return (
     <label className="block text-sm">
       <span className="font-medium">{field.label}</span>

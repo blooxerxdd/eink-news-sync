@@ -28,16 +28,3 @@ def client() -> Generator[TestClient, None, None]:
     init_db()
     with TestClient(app) as test_client:
         yield test_client
-
-
-
-@pytest.fixture
-def data_dir() -> Path:
-    return _tmp
-
-
-@pytest.fixture
-def client() -> Generator[TestClient, None, None]:
-    init_db()
-    with TestClient(app) as test_client:
-        yield test_client

@@ -40,19 +40,33 @@ class Article:
 class ConfigField:
     key: str
     label: str
-    type: str  # "secret" | "text" | "number" | "tags"
+    type: str  # "secret" | "text" | "number" | "tags" | "select"
     required: bool = False
     default: Any = None
     help: str | None = None
+    options: list[dict[str, str]] | None = None
 
 
 class NewsSource(ABC):
     source_id: str
     display_name: str
+    digest_mode: str = "daily"  # "daily" | "archive"
+    output_filename: str | None = None
+    ignores_max_items: bool = False
 
     @abstractmethod
-    async def get_headlines(self, config: dict[str, Any], max_items: int) -> list[ArticleStub]:
-        """Cheap call: candidate articles. May pre-populate body if the source returned it."""
+    async def get_headlines(
+        self,
+        config: dict[str, Any],
+        max_items: int,
+        *,
+        known_ok_ids: set[str] | None = None,
+    ) -> list[ArticleStub]:
+        """Cheap call: candidate articles. May pre-populate body if the source returned it.
+
+        ``known_ok_ids`` is the set of already-stored OK external ids. Archive
+        sources use it to stop walking a newest-first listing.
+        """
 
     @abstractmethod
     async def fetch_article(self, config: dict[str, Any], stub: ArticleStub) -> Article | None:

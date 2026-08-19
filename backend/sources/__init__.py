@@ -1,8 +1,10 @@
 from sources.base import NewsSource
 from sources.guardian import GuardianSource
+from sources.arjay_blog import ArjayBlogSource
 
 SOURCES: dict[str, NewsSource] = {
     "guardian": GuardianSource(),
+    "arjay_blog": ArjayBlogSource(),
 }
 
 

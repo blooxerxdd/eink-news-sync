@@ -4,7 +4,7 @@ from pathlib import Path
 from xml.etree.ElementTree import Element, SubElement, tostring
 
 from config import DIGESTS_DIR, OPDS_FEED_LIMIT
-from digest_builder import parse_digest_filename
+from digest_builder import digest_source_id, is_allowed_epub_filename, parse_digest_filename
 from sources import SOURCES
 
 ATOM = "http://www.w3.org/2005/Atom"
@@ -18,14 +18,18 @@ def list_digest_files(
     directory = directory or DIGESTS_DIR
     if not directory.exists():
         return []
-    files = sorted(directory.glob("digest-*.epub"), key=lambda p: p.name, reverse=True)
+    files = [
+        path
+        for path in directory.glob("*.epub")
+        if is_allowed_epub_filename(path.name)
+    ]
+    files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
     if limit_per_source is None:
         return files
     counts: dict[str, int] = {}
     selected: list[Path] = []
     for path in files:
-        parsed = parse_digest_filename(path.name)
-        source_id = parsed[1] if parsed else ""
+        source_id = digest_source_id(path.name) or ""
         used = counts.get(source_id, 0)
         if used >= limit_per_source:
             continue
@@ -41,7 +45,9 @@ def digest_public_url(filename: str, base_url: str) -> str:
 def digest_entry_title(filename: str) -> str:
     parsed = parse_digest_filename(filename)
     if parsed is None:
-        return Path(filename).stem
+        source_id = digest_source_id(filename)
+        source = SOURCES.get(source_id) if source_id else None
+        return source.display_name if source else Path(filename).stem
     date_iso, source_id = parsed
     if source_id:
         source = SOURCES.get(source_id)

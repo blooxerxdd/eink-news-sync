@@ -65,7 +65,13 @@ class GuardianSource(NewsSource):
 
         return problems
 
-    async def get_headlines(self, config: dict[str, Any], max_items: int) -> list[ArticleStub]:
+    async def get_headlines(
+        self,
+        config: dict[str, Any],
+        max_items: int,
+        *,
+        known_ok_ids: set[str] | None = None,
+    ) -> list[ArticleStub]:
         api_key = str(config.get("api_key") or "").strip()
         if not api_key:
             raise ValueError("Guardian API key is not configured.")
